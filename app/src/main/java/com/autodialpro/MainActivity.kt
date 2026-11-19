@@ -240,7 +240,7 @@ class MainActivity : Activity() {
         listView.text = if (numbers.isEmpty()) {
             "No phone numbers added yet. Import a CSV or add a number manually."
         } else {
-            numbers.mapIndexed { i, n -> "\${i + 1}. $n" }.joinToString("\n")
+            numbers.mapIndexed { i, n -> "${i + 1}. $n" }.joinToString("\n")
         }
     }
 
