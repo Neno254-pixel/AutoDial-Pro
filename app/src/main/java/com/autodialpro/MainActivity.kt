@@ -2,10 +2,13 @@ package com.autodialpro
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.telecom.TelecomManager
 import android.telecom.PhoneAccountHandle
 import android.telephony.SubscriptionInfo
@@ -25,6 +28,12 @@ class MainActivity : Activity() {
     private var accounts: List<PhoneAccountHandle> = emptyList()
     private var selectedSimAccounts: List<PhoneAccountHandle?> = emptyList()
     private var activeSimCount = 0
+    private var lastCalledNumber: String? = null
+    private val attempts = mutableMapOf<String, Int>()
+    private val timerHandler = Handler(Looper.getMainLooper())
+    private var reminderSeconds = 45
+    private lateinit var maxAttemptsInput: EditText
+    private lateinit var cooldownInput: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -110,9 +119,32 @@ class MainActivity : Activity() {
             setPadding(0, 16, 0, 12)
         }
         root.addView(status)
+        root.addView(TextView(this).apply { text = "Redial Settings"; textSize = 18f; setPadding(0, 14, 0, 4) })
+        maxAttemptsInput = EditText(this).apply {
+            hint = "Maximum attempts per number (1–10)"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+            setText("3")
+        }
+        root.addView(maxAttemptsInput)
+        cooldownInput = EditText(this).apply {
+            hint = "Cooldown between redials in seconds (minimum 30)"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+            setText("60")
+        }
+        root.addView(cooldownInput)
+        root.addView(TextView(this).apply {
+            text = "45-second call reminder (alert only; you must end the call yourself)."
+            textSize = 12f
+        })
         root.addView(Button(this).apply {
             text = "CALL NEXT"
             setOnClickListener { callNext() }
+        })
+        root.addView(Button(this).apply {
+            text = "REDIAL LAST NUMBER (MANUAL CONFIRMATION)"
+            setOnClickListener { redialLastNumber() }
         })
         val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         controls.addView(Button(this).apply {
@@ -264,13 +296,49 @@ class MainActivity : Activity() {
                 return
             }
             startActivity(intent)
+            attempts[number] = (attempts[number] ?: 0) + 1
+            lastCalledNumber = number
             current++
-            updateStatus("Calling $number. When the call ends, return here and tap CALL NEXT.")
+            timerHandler.removeCallbacksAndMessages(null)
+            timerHandler.postDelayed({
+                Toast.makeText(this, "45 seconds have passed since dialing. End the call manually if appropriate.", Toast.LENGTH_LONG).show()
+            }, 45_000L)
+            updateStatus("Calling $number. Attempt " + attempts[number] + ". A reminder will appear after 45 seconds; Android does not permit this app to hang up the call automatically.")
         } catch (_: SecurityException) {
             updateStatus("Call permission was denied. Enable Phone permission in Settings.")
         } catch (e: Exception) {
             updateStatus("Could not place call: ${e.message}")
         }
+    }
+
+    private fun redialLastNumber() {
+        val number = lastCalledNumber
+        if (number == null) { updateStatus("No previous number to redial."); return }
+        val maxAttempts = maxAttemptsInput.text.toString().toIntOrNull()?.coerceIn(1, 10) ?: 3
+        val cooldown = cooldownInput.text.toString().toLongOrNull()?.coerceAtLeast(30) ?: 60L
+        val used = attempts[number] ?: 0
+        if (used >= maxAttempts) { updateStatus("Attempt limit reached for $number ($used/$maxAttempts)."); return }
+        if (checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+            updateStatus("Grant Phone permission before redialing."); return
+        }
+        val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:$number"))
+        val selected = selectedSimAccounts.getOrNull(simSpinner.selectedItemPosition)
+        if (selected != null) intent.putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, selected)
+        try {
+            AlertDialog.Builder(this)
+                .setTitle("Confirm redial")
+                .setMessage("Call $number again? Attempt " + (used + 1) + " of $maxAttempts. Please confirm the previous call has ended and the cooldown of at least " + cooldown + " seconds has passed.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Call") { _, _ ->
+                    try {
+                        startActivity(intent)
+                        attempts[number] = used + 1
+                        timerHandler.removeCallbacksAndMessages(null)
+                        timerHandler.postDelayed({ Toast.makeText(this, "45 seconds since dialing. End the call manually if appropriate.", Toast.LENGTH_LONG).show() }, 45_000L)
+                        updateStatus("Redialed $number. Attempt " + attempts[number] + " of $maxAttempts.")
+                    } catch (e: Exception) { updateStatus("Could not redial: " + (e.message ?: "unknown error")) }
+                }.show()
+        } catch (e: Exception) { updateStatus("Could not prepare redial: " + (e.message ?: "unknown error")) }
     }
 
     private fun updateStatus(message: String) {
