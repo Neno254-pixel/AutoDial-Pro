@@ -97,7 +97,7 @@ class MainActivity : Activity() {
         manualNumberInput = EditText(this).apply {
             hint = "Enter phone number (e.g. +254722580578)"
             inputType = android.text.InputType.TYPE_CLASS_PHONE
-            singleLine = true
+            setSingleLine(true)
         }
         root.addView(manualNumberInput)
         root.addView(Button(this).apply {
@@ -246,7 +246,7 @@ class MainActivity : Activity() {
 
     private fun callNext() {
         if (paused) { updateStatus("Campaign is paused. Tap Resume first."); return }
-        if (numbers.isEmpty()) { updateStatus("Import a CSV contact list first."); return }
+        if (numbers.isEmpty()) { updateStatus("Add a phone number manually or import a CSV list first."); return }
         if (current >= numbers.size) { updateStatus("All contacts processed."); return }
         if (checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.CALL_PHONE, Manifest.permission.READ_PHONE_STATE), 77)
