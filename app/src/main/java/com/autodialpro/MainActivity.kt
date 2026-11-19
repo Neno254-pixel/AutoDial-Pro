@@ -24,7 +24,42 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         buildScreen()
-        loadSimAccounts()
+        ensurePhoneStatePermission()
+    }
+
+    private fun ensurePhoneStatePermission() {
+        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
+            loadSimAccounts()
+        } else {
+            requestPermissions(arrayOf(Manifest.permission.READ_PHONE_STATE), 78)
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 78) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                loadSimAccounts()
+            } else {
+                simSpinner.adapter = ArrayAdapter(
+                    this,
+                    android.R.layout.simple_spinner_dropdown_item,
+                    listOf("Phone permission denied — enable it in Settings")
+                )
+                updateStatus("Allow Phone permission so AutoDial Pro can detect available SIM accounts.")
+            }
+        } else if (requestCode == 77) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                loadSimAccounts()
+                updateStatus("Permission granted. Tap CALL NEXT again.")
+            } else {
+                updateStatus("Phone permission denied. Enable it in Settings.")
+            }
+        }
     }
 
     private fun buildScreen() {
