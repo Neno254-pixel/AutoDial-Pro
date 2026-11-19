@@ -172,22 +172,39 @@ class MainActivity : Activity() {
 
     private fun readCsv(uri: Uri) {
         try {
-            contentResolver.openInputStream(uri)?.use { stream ->
-                BufferedReader(InputStreamReader(stream)).useLines { lines ->
-                    numbers.clear()
-                    lines.forEach { line ->
-                        val value = line.split(",", ";", "\t").firstOrNull()?.trim()?.trim('"') ?: ""
-                        val cleaned = value.replace(" ", "").replace("-", "")
-                        if (cleaned.matches(Regex("^\\+?[0-9]{7,15}$"))) numbers.add(cleaned)
+            val imported = mutableListOf<String>()
+            val stream = contentResolver.openInputStream(uri)
+                ?: throw IllegalStateException("Android could not open this file. Copy it to Downloads and try again.")
+            stream.use {
+                BufferedReader(InputStreamReader(it, Charsets.UTF_8)).useLines { lines ->
+                    lines.forEach { rawLine ->
+                        val line = rawLine.removePrefix("\uFEFF").trim()
+                        if (line.isNotEmpty()) {
+                            val cells = line.split(",", ";", "\t")
+                            val candidate = cells.asSequence()
+                                .map { cell ->
+                                    cell.trim().trim('"', '\'')
+                                        .replace(Regex("[\\s()\\-]"), "")
+                                }
+                                .firstOrNull { it.matches(Regex("^\\+?[0-9]{7,15}$")) }
+                            if (candidate != null) imported.add(candidate)
+                        }
                     }
                 }
             }
+            numbers.clear()
+            numbers.addAll(imported.distinct())
             current = 0
             paused = false
-            listView.text = numbers.mapIndexed { i, n -> "${i + 1}. $n" }.joinToString("\n")
-            updateStatus("Loaded ${numbers.size} valid phone numbers.")
+            listView.text = if (numbers.isEmpty()) {
+                "No valid phone numbers found. Put phone numbers in a column, e.g. 0712345678."
+            } else {
+                numbers.mapIndexed { i, n -> "${i + 1}. $n" }.joinToString("\n")
+            }
+            updateStatus(if (numbers.isEmpty()) "File opened, but no valid phone numbers were found."
+                else "Loaded ${numbers.size} valid phone numbers.")
         } catch (e: Exception) {
-            updateStatus("Could not read file: ${e.message}")
+            updateStatus("Could not load CSV: ${e.message ?: "unknown file error"}")
         }
     }
 
