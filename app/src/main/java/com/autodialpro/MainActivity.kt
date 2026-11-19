@@ -8,6 +8,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.telecom.TelecomManager
 import android.telecom.PhoneAccountHandle
+import android.telephony.SubscriptionInfo
+import android.telephony.SubscriptionManager
 import android.widget.*
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -20,6 +22,8 @@ class MainActivity : Activity() {
     private lateinit var listView: TextView
     private lateinit var simSpinner: Spinner
     private var accounts: List<PhoneAccountHandle> = emptyList()
+    private var selectedSimAccounts: List<PhoneAccountHandle?> = emptyList()
+    private var activeSimCount = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -127,16 +131,37 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
+    @Suppress("MissingPermission")
     private fun loadSimAccounts() {
         val telecom = getSystemService(TELECOM_SERVICE) as TelecomManager
+        val subscriptionManager = getSystemService(TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
         accounts = try { telecom.callCapablePhoneAccounts } catch (_: Exception) { emptyList() }
-        val labels = if (accounts.isEmpty()) listOf("Default SIM (choose in phone settings)")
-        else accounts.mapIndexed { i, handle ->
-            "SIM ${i + 1}: ${telecom.getPhoneAccount(handle)?.label ?: "Mobile network"}"
+        val subscriptions: List<SubscriptionInfo> = try {
+            subscriptionManager.activeSubscriptionInfoList ?: emptyList()
+        } catch (_: Exception) { emptyList() }
+        activeSimCount = subscriptions.size
+        val labels = mutableListOf<String>()
+        val handlesForChoices = mutableListOf<PhoneAccountHandle?>()
+        subscriptions.sortedBy { it.simSlotIndex }.forEach { info ->
+            val handle = accounts.firstOrNull { it.id == info.subscriptionId.toString() }
+                ?: accounts.getOrNull(info.simSlotIndex)
+            val slot = info.simSlotIndex + 1
+            val name = info.displayName?.toString()?.takeIf { it.isNotBlank() } ?: "Mobile network"
+            labels.add("SIM " + slot + " — " + name)
+            handlesForChoices.add(handle)
         }
+        if (labels.isEmpty()) {
+            accounts.forEachIndexed { index, handle ->
+                val label = try { telecom.getPhoneAccount(handle)?.label?.toString() } catch (_: Exception) { null }
+                labels.add("SIM " + (index + 1) + " — " + (label ?: "Mobile network"))
+                handlesForChoices.add(handle)
+            }
+        }
+        if (labels.isEmpty()) { labels.add("No SIM accounts detected"); handlesForChoices.add(null) }
+        selectedSimAccounts = handlesForChoices
         simSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
+        updateStatus("Detected " + activeSimCount + " active SIM(s); " + accounts.size + " calling account(s) available.")
     }
-
     @Deprecated("Deprecated in Android API; retained for compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -178,9 +203,12 @@ class MainActivity : Activity() {
         val number = numbers[current]
         try {
             val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:$number"))
-            if (accounts.isNotEmpty()) {
-                val selected = accounts.getOrNull(simSpinner.selectedItemPosition)
-                if (selected != null) intent.putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, selected)
+            val selected = selectedSimAccounts.getOrNull(simSpinner.selectedItemPosition)
+            if (selected != null) {
+                intent.putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, selected)
+            } else if (activeSimCount > 1) {
+                updateStatus("Android detected multiple SIMs but did not provide a selectable calling account. Set the preferred SIM in Samsung SIM manager.")
+                return
             }
             startActivity(intent)
             current++
