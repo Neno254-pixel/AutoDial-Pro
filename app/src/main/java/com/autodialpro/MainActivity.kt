@@ -21,7 +21,6 @@ class MainActivity : Activity() {
     private lateinit var simSpinner: Spinner
     private var accounts: List<PhoneAccountHandle> = emptyList()
 
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         buildScreen()
@@ -46,22 +45,25 @@ class MainActivity : Activity() {
         root.addView(TextView(this).apply { text = "Choose SIM"; textSize = 16f })
         simSpinner = Spinner(this)
         root.addView(simSpinner)
-        val import = Button(this).apply {
+        root.addView(Button(this).apply {
             text = "Import contacts (CSV)"
-            setOnClickListener { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*" }, 10) }
-        }
-        root.addView(import)
+            setOnClickListener {
+                startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                }, 10)
+            }
+        })
         status = TextView(this).apply {
             text = "Import a CSV file containing phone numbers."
             textSize = 15f
             setPadding(0, 16, 0, 12)
         }
         root.addView(status)
-        val start = Button(this).apply {
+        root.addView(Button(this).apply {
             text = "CALL NEXT"
             setOnClickListener { callNext() }
-        }
-        root.addView(start)
+        })
         val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         controls.addView(Button(this).apply {
             text = "Pause"
@@ -94,11 +96,21 @@ class MainActivity : Activity() {
         val telecom = getSystemService(TELECOM_SERVICE) as TelecomManager
         accounts = try { telecom.callCapablePhoneAccounts } catch (_: Exception) { emptyList() }
         val labels = if (accounts.isEmpty()) listOf("Default SIM (choose in phone settings)")
-                    else accounts.mapIndexed { i, handle -> "SIM ${i + 1}: ${telecom.getPhoneAccount(handle)?.label ?: "Mobile network"}" }
+        else accounts.mapIndexed { i, handle ->
+            "SIM ${i + 1}: ${telecom.getPhoneAccount(handle)?.label ?: "Mobile network"}"
+        }
         simSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {\n        super.onActivityResult(requestCode, resultCode, data)\n        if (requestCode == 10 && resultCode == RESULT_OK) data?.data?.let { readCsv(it) }\n    }\n\n    private fun readCsv(uri: Uri) {
+    @Deprecated("Deprecated in Android API; retained for compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 10 && resultCode == RESULT_OK) {
+            data?.data?.let { readCsv(it) }
+        }
+    }
+
+    private fun readCsv(uri: Uri) {
         try {
             contentResolver.openInputStream(uri)?.use { stream ->
                 BufferedReader(InputStreamReader(stream)).useLines { lines ->
@@ -114,7 +126,9 @@ class MainActivity : Activity() {
             paused = false
             listView.text = numbers.mapIndexed { i, n -> "${i + 1}. $n" }.joinToString("\n")
             updateStatus("Loaded ${numbers.size} valid phone numbers.")
-        } catch (e: Exception) { updateStatus("Could not read file: ${e.message}") }
+        } catch (e: Exception) {
+            updateStatus("Could not read file: ${e.message}")
+        }
     }
 
     private fun callNext() {
@@ -136,7 +150,7 @@ class MainActivity : Activity() {
             startActivity(intent)
             current++
             updateStatus("Calling $number. When the call ends, return here and tap CALL NEXT.")
-        } catch (e: SecurityException) {
+        } catch (_: SecurityException) {
             updateStatus("Call permission was denied. Enable Phone permission in Settings.")
         } catch (e: Exception) {
             updateStatus("Could not place call: ${e.message}")
