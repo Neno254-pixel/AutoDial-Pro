@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private var activeSimCount = 0
     private var lastCalledNumber: String? = null
     private val attempts = mutableMapOf<String, Int>()
+    private val lastDialAt = mutableMapOf<String, Long>()
     private val timerHandler = Handler(Looper.getMainLooper())
     private var reminderSeconds = 45
     private lateinit var maxAttemptsInput: EditText
@@ -297,6 +298,7 @@ class MainActivity : Activity() {
             }
             startActivity(intent)
             attempts[number] = (attempts[number] ?: 0) + 1
+            lastDialAt[number] = System.currentTimeMillis()
             lastCalledNumber = number
             current++
             timerHandler.removeCallbacksAndMessages(null)
@@ -317,6 +319,9 @@ class MainActivity : Activity() {
         val maxAttempts = maxAttemptsInput.text.toString().toIntOrNull()?.coerceIn(1, 10) ?: 3
         val cooldown = cooldownInput.text.toString().toLongOrNull()?.coerceAtLeast(30) ?: 60L
         val used = attempts[number] ?: 0
+        val lastTime = lastDialAt[number] ?: 0L
+        val remainingMs = cooldown * 1000L - (System.currentTimeMillis() - lastTime)
+        if (remainingMs > 0L) { updateStatus("Please wait " + ((remainingMs + 999L) / 1000L) + " more seconds before redialing $number."); return }
         if (used >= maxAttempts) { updateStatus("Attempt limit reached for $number ($used/$maxAttempts)."); return }
         if (checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
             updateStatus("Grant Phone permission before redialing."); return
@@ -333,6 +338,7 @@ class MainActivity : Activity() {
                     try {
                         startActivity(intent)
                         attempts[number] = used + 1
+                        lastDialAt[number] = System.currentTimeMillis()
                         timerHandler.removeCallbacksAndMessages(null)
                         timerHandler.postDelayed({ Toast.makeText(this, "45 seconds since dialing. End the call manually if appropriate.", Toast.LENGTH_LONG).show() }, 45_000L)
                         updateStatus("Redialed $number. Attempt " + attempts[number] + " of $maxAttempts.")
