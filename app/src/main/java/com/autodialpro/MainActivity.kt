@@ -21,6 +21,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var listView: TextView
     private lateinit var simSpinner: Spinner
+    private lateinit var manualNumberInput: EditText
     private var accounts: List<PhoneAccountHandle> = emptyList()
     private var selectedSimAccounts: List<PhoneAccountHandle?> = emptyList()
     private var activeSimCount = 0
@@ -92,6 +93,16 @@ class MainActivity : Activity() {
                     type = "*/*"
                 }, 10)
             }
+        })
+        manualNumberInput = EditText(this).apply {
+            hint = "Enter phone number (e.g. +254722580578)"
+            inputType = android.text.InputType.TYPE_CLASS_PHONE
+            singleLine = true
+        }
+        root.addView(manualNumberInput)
+        root.addView(Button(this).apply {
+            text = "ADD NUMBER"
+            setOnClickListener { addManualNumber() }
         })
         status = TextView(this).apply {
             text = "Import a CSV file containing phone numbers."
@@ -193,18 +204,43 @@ class MainActivity : Activity() {
                 }
             }
             numbers.clear()
-            numbers.addAll(imported.distinct())
+            numbers.addAll(imported.mapNotNull { normalizePhoneNumber(it) }.distinct())
             current = 0
             paused = false
-            listView.text = if (numbers.isEmpty()) {
-                "No valid phone numbers found. Put phone numbers in a column, e.g. 0712345678."
-            } else {
-                numbers.mapIndexed { i, n -> "${i + 1}. $n" }.joinToString("\n")
-            }
+            refreshNumberList()
             updateStatus(if (numbers.isEmpty()) "File opened, but no valid phone numbers were found."
                 else "Loaded ${numbers.size} valid phone numbers.")
         } catch (e: Exception) {
             updateStatus("Could not load CSV: ${e.message ?: "unknown file error"}")
+        }
+    }
+
+    private fun normalizePhoneNumber(raw: String): String? {
+        val cleaned = raw.trim().replace(Regex("[\\s()\\-]"), "")
+        return cleaned.takeIf { it.matches(Regex("^\\+?[0-9]{7,15}$")) }
+    }
+
+    private fun addManualNumber() {
+        val number = normalizePhoneNumber(manualNumberInput.text.toString())
+        if (number == null) {
+            manualNumberInput.error = "Enter a valid number, including country code if needed."
+            return
+        }
+        if (numbers.contains(number)) {
+            updateStatus("That number is already in the list.")
+            return
+        }
+        numbers.add(number)
+        manualNumberInput.text.clear()
+        refreshNumberList()
+        updateStatus("Added $number to the call list.")
+    }
+
+    private fun refreshNumberList() {
+        listView.text = if (numbers.isEmpty()) {
+            "No phone numbers added yet. Import a CSV or add a number manually."
+        } else {
+            numbers.mapIndexed { i, n -> "\${i + 1}. $n" }.joinToString("\n")
         }
     }
 
