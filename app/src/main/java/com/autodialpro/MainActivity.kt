@@ -9,9 +9,6 @@ import android.os.Bundle
 import android.telecom.TelecomManager
 import android.telecom.PhoneAccountHandle
 import android.widget.*
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import java.io.BufferedReader
 import java.io.InputStreamReader
 
@@ -24,9 +21,6 @@ class MainActivity : Activity() {
     private lateinit var simSpinner: Spinner
     private var accounts: List<PhoneAccountHandle> = emptyList()
 
-    private val importFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri?.let { readCsv(it) }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,7 +48,7 @@ class MainActivity : Activity() {
         root.addView(simSpinner)
         val import = Button(this).apply {
             text = "Import contacts (CSV)"
-            setOnClickListener { importFile.launch(arrayOf("text/*", "application/vnd.ms-excel")) }
+            setOnClickListener { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*" }, 10) }
         }
         root.addView(import)
         status = TextView(this).apply {
@@ -104,7 +98,7 @@ class MainActivity : Activity() {
         simSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
     }
 
-    private fun readCsv(uri: Uri) {
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {\n        super.onActivityResult(requestCode, resultCode, data)\n        if (requestCode == 10 && resultCode == RESULT_OK) data?.data?.let { readCsv(it) }\n    }\n\n    private fun readCsv(uri: Uri) {
         try {
             contentResolver.openInputStream(uri)?.use { stream ->
                 BufferedReader(InputStreamReader(stream)).useLines { lines ->
@@ -127,8 +121,8 @@ class MainActivity : Activity() {
         if (paused) { updateStatus("Campaign is paused. Tap Resume first."); return }
         if (numbers.isEmpty()) { updateStatus("Import a CSV contact list first."); return }
         if (current >= numbers.size) { updateStatus("All contacts processed."); return }
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CALL_PHONE, Manifest.permission.READ_PHONE_STATE), 77)
+        if (checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.CALL_PHONE, Manifest.permission.READ_PHONE_STATE), 77)
             updateStatus("Allow phone permissions, then tap CALL NEXT again.")
             return
         }
